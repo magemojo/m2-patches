@@ -1,0 +1,1290 @@
+diff --git a/vendor/magento/module-catalog/Test/Mftf/Data/ProductData.xml b/vendor/magento/module-catalog/Test/Mftf/Data/ProductData.xml
+index 230aaea4bd49..5f8ca3f399d1 100644
+--- a/vendor/magento/module-catalog/Test/Mftf/Data/ProductData.xml
++++ b/vendor/magento/module-catalog/Test/Mftf/Data/ProductData.xml
+@@ -35,6 +35,9 @@
+         <requiredEntity type="product_extension_attribute">EavStockItem</requiredEntity>
+         <requiredEntity type="custom_attribute_array">CustomAttributeCategoryIds</requiredEntity>
+     </entity>
++    <entity name="ApiSimpleProductZeroQty" type="product">
++        <requiredEntity type="product_extension_attribute">EavStock0</requiredEntity>
++    </entity>
+     <entity name="ApiSimpleProductWithNoSpace" type="product" extends="ApiSimpleProduct">
+         <data key="name">TestFooBar</data>
+         <data key="sku" unique="suffix">foobar</data>
+diff --git a/vendor/magento/module-customer/Test/Mftf/Section/StorefrontCustomerOrderViewSection.xml b/vendor/magento/module-customer/Test/Mftf/Section/StorefrontCustomerOrderViewSection.xml
+index 4dcedb12c96b..adae32430b63 100644
+--- a/vendor/magento/module-customer/Test/Mftf/Section/StorefrontCustomerOrderViewSection.xml
++++ b/vendor/magento/module-customer/Test/Mftf/Section/StorefrontCustomerOrderViewSection.xml
+@@ -9,6 +9,7 @@
+         xsi:noNamespaceSchemaLocation="urn:magento:mftf:Page/etc/SectionObject.xsd">
+     <section name="StorefrontCustomerOrderViewSection">
+         <element name="reorder" type="text" selector="a.action.order" timeout="30"/>
++        <element name="view" type="text" selector="a.action.view" timeout="30"/>
+         <element name="orderTitle" type="text" selector=".page-title span"/>
+         <element name="myOrdersTable" type="text" selector="#my-orders-table"/>
+         <element name="subtotal" type="text" selector=".subtotal .amount"/>
+diff --git a/vendor/magento/module-quote/Model/QuoteManagement.php b/vendor/magento/module-quote/Model/QuoteManagement.php
+index b767fa9ce374..ce18d6b4a4e5 100644
+--- a/vendor/magento/module-quote/Model/QuoteManagement.php
++++ b/vendor/magento/module-quote/Model/QuoteManagement.php
+@@ -8,18 +8,35 @@
+ namespace Magento\Quote\Model;
+ 
+ use Magento\Authorization\Model\UserContextInterface;
++use Magento\Checkout\Model\Session as CheckoutSession;
++use Magento\Customer\Api\AccountManagementInterface;
++use Magento\Customer\Api\AddressRepositoryInterface;
++use Magento\Customer\Api\CustomerRepositoryInterface;
+ use Magento\Customer\Api\Data\GroupInterface;
++use Magento\Customer\Model\CustomerFactory;
++use Magento\Customer\Model\Session as CustomerSession;
++use Magento\Framework\Api\DataObjectHelper;
+ use Magento\Framework\App\ObjectManager;
++use Magento\Framework\App\RequestInterface;
+ use Magento\Framework\Event\ManagerInterface as EventManager;
+ use Magento\Framework\Exception\CouldNotSaveException;
+ use Magento\Framework\Exception\LocalizedException;
++use Magento\Framework\Exception\NoSuchEntityException;
+ use Magento\Framework\Exception\StateException;
++use Magento\Framework\HTTP\PhpEnvironment\RemoteAddress;
++use Magento\Framework\Model\AbstractExtensibleModel;
++use Magento\Payment\Model\Method\AbstractMethod;
++use Magento\Quote\Api\CartManagementInterface;
++use Magento\Quote\Api\CartRepositoryInterface;
+ use Magento\Quote\Api\Data\PaymentInterface;
+ use Magento\Quote\Model\Quote\Address\ToOrder as ToOrderConverter;
+ use Magento\Quote\Model\Quote\Address\ToOrderAddress as ToOrderAddressConverter;
+ use Magento\Quote\Model\Quote as QuoteEntity;
++use Magento\Quote\Model\Quote\AddressFactory;
+ use Magento\Quote\Model\Quote\Item\ToOrderItem as ToOrderItemConverter;
+ use Magento\Quote\Model\Quote\Payment\ToOrderPayment as ToOrderPaymentConverter;
++use Magento\Quote\Model\ResourceModel\Quote\Item;
++use Magento\Sales\Api\Data\OrderInterface;
+ use Magento\Sales\Api\Data\OrderInterfaceFactory as OrderFactory;
+ use Magento\Sales\Api\OrderManagementInterface as OrderManagement;
+ use Magento\Store\Model\StoreManagerInterface;
+@@ -31,7 +48,7 @@
+  * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
+  * @SuppressWarnings(PHPMD.TooManyFields)
+  */
+-class QuoteManagement implements \Magento\Quote\Api\CartManagementInterface
++class QuoteManagement implements CartManagementInterface
+ {
+     /**
+      * @var EventManager
+@@ -84,27 +101,27 @@ class QuoteManagement implements \Magento\Quote\Api\CartManagementInterface
+     protected $userContext;
+ 
+     /**
+-     * @var \Magento\Quote\Api\CartRepositoryInterface
++     * @var CartRepositoryInterface
+      */
+     protected $quoteRepository;
+ 
+     /**
+-     * @var \Magento\Customer\Api\CustomerRepositoryInterface
++     * @var CustomerRepositoryInterface
+      */
+     protected $customerRepository;
+ 
+     /**
+-     * @var \Magento\Customer\Model\CustomerFactory
++     * @var CustomerFactory
+      */
+     protected $customerModelFactory;
+ 
+     /**
+-     * @var \Magento\Quote\Model\Quote\AddressFactory
++     * @var AddressFactory
+      */
+     protected $quoteAddressFactory;
+ 
+     /**
+-     * @var \Magento\Framework\Api\DataObjectHelper
++     * @var DataObjectHelper
+      */
+     protected $dataObjectHelper;
+ 
+@@ -114,17 +131,17 @@ class QuoteManagement implements \Magento\Quote\Api\CartManagementInterface
+     protected $storeManager;
+ 
+     /**
+-     * @var \Magento\Checkout\Model\Session
++     * @var CheckoutSession
+      */
+     protected $checkoutSession;
+ 
+     /**
+-     * @var \Magento\Customer\Model\Session
++     * @var CustomerSession
+      */
+     protected $customerSession;
+ 
+     /**
+-     * @var \Magento\Customer\Api\AccountManagementInterface
++     * @var AccountManagementInterface
+      */
+     protected $accountManagement;
+ 
+@@ -134,12 +151,12 @@ class QuoteManagement implements \Magento\Quote\Api\CartManagementInterface
+     protected $quoteFactory;
+ 
+     /**
+-     * @var \Magento\Quote\Model\QuoteIdMaskFactory
++     * @var QuoteIdMaskFactory
+      */
+     private $quoteIdMaskFactory;
+ 
+     /**
+-     * @var \Magento\Customer\Api\AddressRepositoryInterface
++     * @var AddressRepositoryInterface
+      */
+     private $addressRepository;
+ 
+@@ -149,12 +166,12 @@ class QuoteManagement implements \Magento\Quote\Api\CartManagementInterface
+     private $addressesToSync = [];
+ 
+     /**
+-     * @var \Magento\Framework\App\RequestInterface
++     * @var RequestInterface
+      */
+     private $request;
+ 
+     /**
+-     * @var \Magento\Framework\HTTP\PhpEnvironment\RemoteAddress
++     * @var RemoteAddress
+      */
+     private $remoteAddress;
+ 
+@@ -169,20 +186,20 @@ class QuoteManagement implements \Magento\Quote\Api\CartManagementInterface
+      * @param ToOrderItemConverter $quoteItemToOrderItem
+      * @param ToOrderPaymentConverter $quotePaymentToOrderPayment
+      * @param UserContextInterface $userContext
+-     * @param \Magento\Quote\Api\CartRepositoryInterface $quoteRepository
+-     * @param \Magento\Customer\Api\CustomerRepositoryInterface $customerRepository
+-     * @param \Magento\Customer\Model\CustomerFactory $customerModelFactory
+-     * @param \Magento\Quote\Model\Quote\AddressFactory $quoteAddressFactory
+-     * @param \Magento\Framework\Api\DataObjectHelper $dataObjectHelper
++     * @param CartRepositoryInterface $quoteRepository
++     * @param CustomerRepositoryInterface $customerRepository
++     * @param CustomerFactory $customerModelFactory
++     * @param AddressFactory $quoteAddressFactory
++     * @param DataObjectHelper $dataObjectHelper
+      * @param StoreManagerInterface $storeManager
+-     * @param \Magento\Checkout\Model\Session $checkoutSession
+-     * @param \Magento\Customer\Model\Session $customerSession
+-     * @param \Magento\Customer\Api\AccountManagementInterface $accountManagement
++     * @param CheckoutSession $checkoutSession
++     * @param CustomerSession $customerSession
++     * @param AccountManagementInterface $accountManagement
+      * @param QuoteFactory $quoteFactory
+-     * @param \Magento\Quote\Model\QuoteIdMaskFactory|null $quoteIdMaskFactory
+-     * @param \Magento\Customer\Api\AddressRepositoryInterface|null $addressRepository
+-     * @param \Magento\Framework\App\RequestInterface|null $request
+-     * @param \Magento\Framework\HTTP\PhpEnvironment\RemoteAddress $remoteAddress
++     * @param QuoteIdMaskFactory|null $quoteIdMaskFactory
++     * @param AddressRepositoryInterface|null $addressRepository
++     * @param RequestInterface|null $request
++     * @param RemoteAddress $remoteAddress
+      * @SuppressWarnings(PHPMD.ExcessiveParameterList)
+      */
+     public function __construct(
+@@ -196,20 +213,20 @@ public function __construct(
+         ToOrderItemConverter $quoteItemToOrderItem,
+         ToOrderPaymentConverter $quotePaymentToOrderPayment,
+         UserContextInterface $userContext,
+-        \Magento\Quote\Api\CartRepositoryInterface $quoteRepository,
+-        \Magento\Customer\Api\CustomerRepositoryInterface $customerRepository,
+-        \Magento\Customer\Model\CustomerFactory $customerModelFactory,
+-        \Magento\Quote\Model\Quote\AddressFactory $quoteAddressFactory,
+-        \Magento\Framework\Api\DataObjectHelper $dataObjectHelper,
++        CartRepositoryInterface $quoteRepository,
++        CustomerRepositoryInterface $customerRepository,
++        CustomerFactory $customerModelFactory,
++        AddressFactory $quoteAddressFactory,
++        DataObjectHelper $dataObjectHelper,
+         StoreManagerInterface $storeManager,
+-        \Magento\Checkout\Model\Session $checkoutSession,
+-        \Magento\Customer\Model\Session $customerSession,
+-        \Magento\Customer\Api\AccountManagementInterface $accountManagement,
+-        \Magento\Quote\Model\QuoteFactory $quoteFactory,
+-        \Magento\Quote\Model\QuoteIdMaskFactory $quoteIdMaskFactory = null,
+-        \Magento\Customer\Api\AddressRepositoryInterface $addressRepository = null,
+-        \Magento\Framework\App\RequestInterface $request = null,
+-        \Magento\Framework\HTTP\PhpEnvironment\RemoteAddress $remoteAddress = null
++        CheckoutSession $checkoutSession,
++        CustomerSession $customerSession,
++        AccountManagementInterface $accountManagement,
++        QuoteFactory $quoteFactory,
++        QuoteIdMaskFactory $quoteIdMaskFactory = null,
++        AddressRepositoryInterface $addressRepository = null,
++        RequestInterface $request = null,
++        RemoteAddress $remoteAddress = null
+     ) {
+         $this->eventManager = $eventManager;
+         $this->submitQuoteValidator = $submitQuoteValidator;
+@@ -232,13 +249,13 @@ public function __construct(
+         $this->customerSession = $customerSession;
+         $this->quoteFactory = $quoteFactory;
+         $this->quoteIdMaskFactory = $quoteIdMaskFactory ?: ObjectManager::getInstance()
+-            ->get(\Magento\Quote\Model\QuoteIdMaskFactory::class);
++            ->get(QuoteIdMaskFactory::class);
+         $this->addressRepository = $addressRepository ?: ObjectManager::getInstance()
+-            ->get(\Magento\Customer\Api\AddressRepositoryInterface::class);
++            ->get(AddressRepositoryInterface::class);
+         $this->request = $request ?: ObjectManager::getInstance()
+-            ->get(\Magento\Framework\App\RequestInterface::class);
++            ->get(RequestInterface::class);
+         $this->remoteAddress = $remoteAddress ?: ObjectManager::getInstance()
+-            ->get(\Magento\Framework\HTTP\PhpEnvironment\RemoteAddress::class);
++            ->get(RemoteAddress::class);
+     }
+ 
+     /**
+@@ -307,14 +324,14 @@ public function assignCustomer($cartId, $customerId, $storeId)
+             $this->quoteRepository->save($customerActiveQuote);
+ 
+         // phpcs:ignore Magento2.CodeAnalysis.EmptyBlock
+-        } catch (\Magento\Framework\Exception\NoSuchEntityException $e) {
++        } catch (NoSuchEntityException $e) {
+         }
+ 
+         $quote->setCustomer($customer);
+         $quote->setCustomerIsGuest(0);
+         $quote->setIsActive(1);
+ 
+-        /** @var \Magento\Quote\Model\QuoteIdMask $quoteIdMask */
++        /** @var QuoteIdMask $quoteIdMask */
+         $quoteIdMask = $this->quoteIdMaskFactory->create()->load($cartId, 'quote_id');
+         if ($quoteIdMask->getId()) {
+             $quoteIdMask->delete();
+@@ -329,11 +346,11 @@ public function assignCustomer($cartId, $customerId, $storeId)
+      * Creates an anonymous cart.
+      *
+      * @param int $storeId
+-     * @return \Magento\Quote\Model\Quote Cart object.
++     * @return Quote Cart object.
+      */
+     protected function createAnonymousCart($storeId)
+     {
+-        /** @var \Magento\Quote\Model\Quote $quote */
++        /** @var Quote $quote */
+         $quote = $this->quoteFactory->create();
+         $quote->setStoreId($storeId);
+         return $quote;
+@@ -344,16 +361,16 @@ protected function createAnonymousCart($storeId)
+      *
+      * @param int $customerId
+      * @param int $storeId
+-     * @return \Magento\Quote\Model\Quote Cart object.
++     * @return Quote Cart object.
+      * @throws CouldNotSaveException The cart could not be created.
+      */
+     protected function createCustomerCart($customerId, $storeId)
+     {
+         try {
+             $quote = $this->quoteRepository->getActiveForCustomer($customerId);
+-        } catch (\Magento\Framework\Exception\NoSuchEntityException $e) {
++        } catch (NoSuchEntityException $e) {
+             $customer = $this->customerRepository->getById($customerId);
+-            /** @var \Magento\Quote\Model\Quote $quote */
++            /** @var Quote $quote */
+             $quote = $this->quoteFactory->create();
+             $quote->setStoreId($storeId);
+             $quote->setCustomer($customer);
+@@ -364,18 +381,23 @@ protected function createCustomerCart($customerId, $storeId)
+ 
+     /**
+      * @inheritdoc
++     * @SuppressWarnings(PHPMD.CyclomaticComplexity)
++     * @SuppressWarnings(PHPMD.NPathComplexity)
+      */
+     public function placeOrder($cartId, PaymentInterface $paymentMethod = null)
+     {
+         $quote = $this->quoteRepository->getActive($cartId);
++        $customer = $quote->getCustomer();
++        $customerId = $customer ? $customer->getId() : null;
++
+         if ($paymentMethod) {
+             $paymentMethod->setChecks(
+                 [
+-                    \Magento\Payment\Model\Method\AbstractMethod::CHECK_USE_CHECKOUT,
+-                    \Magento\Payment\Model\Method\AbstractMethod::CHECK_USE_FOR_COUNTRY,
+-                    \Magento\Payment\Model\Method\AbstractMethod::CHECK_USE_FOR_CURRENCY,
+-                    \Magento\Payment\Model\Method\AbstractMethod::CHECK_ORDER_TOTAL_MIN_MAX,
+-                    \Magento\Payment\Model\Method\AbstractMethod::CHECK_ZERO_TOTAL
++                    AbstractMethod::CHECK_USE_CHECKOUT,
++                    AbstractMethod::CHECK_USE_FOR_COUNTRY,
++                    AbstractMethod::CHECK_USE_FOR_CURRENCY,
++                    AbstractMethod::CHECK_ORDER_TOTAL_MIN_MAX,
++                    AbstractMethod::CHECK_ZERO_TOTAL
+                 ]
+             );
+             $quote->getPayment()->setQuote($quote);
+@@ -386,18 +408,22 @@ public function placeOrder($cartId, PaymentInterface $paymentMethod = null)
+             $quote->collectTotals();
+         }
+ 
+-        if ($quote->getCheckoutMethod() === self::METHOD_GUEST) {
++        if ($quote->getCheckoutMethod() === self::METHOD_GUEST || !$customerId) {
+             $quote->setCustomerId(null);
+-            $quote->setCustomerEmail($quote->getBillingAddress()->getEmail());
+-            if ($quote->getCustomerFirstname() === null && $quote->getCustomerLastname() === null) {
+-                $quote->setCustomerFirstname($quote->getBillingAddress()->getFirstname());
+-                $quote->setCustomerLastname($quote->getBillingAddress()->getLastname());
+-                if ($quote->getBillingAddress()->getMiddlename() === null) {
+-                    $quote->setCustomerMiddlename($quote->getBillingAddress()->getMiddlename());
++            $billingAddress = $quote->getBillingAddress();
++            $quote->setCustomerEmail($billingAddress ? $billingAddress->getEmail() : null);
++            if ($quote->getCustomerFirstname() === null
++                && $quote->getCustomerLastname() === null
++                && $billingAddress
++            ) {
++                $quote->setCustomerFirstname($billingAddress->getFirstname());
++                $quote->setCustomerLastname($billingAddress->getLastname());
++                if ($billingAddress->getMiddlename() === null) {
++                    $quote->setCustomerMiddlename($billingAddress->getMiddlename());
+                 }
+             }
+             $quote->setCustomerIsGuest(true);
+-            $groupId = $quote->getCustomer()->getGroupId() ?: GroupInterface::NOT_LOGGED_IN_ID;
++            $groupId = $customer ? $customer->getGroupId() : GroupInterface::NOT_LOGGED_IN_ID;
+             $quote->setCustomerGroupId($groupId);
+         }
+ 
+@@ -442,9 +468,9 @@ public function getCartForCustomer($customerId)
+      *
+      * @param Quote $quote
+      * @param array $orderData
+-     * @return \Magento\Framework\Model\AbstractExtensibleModel|\Magento\Sales\Api\Data\OrderInterface|object|null
++     * @return AbstractExtensibleModel|OrderInterface|object|null
+      * @throws \Exception
+-     * @throws \Magento\Framework\Exception\LocalizedException
++     * @throws LocalizedException
+      */
+     public function submit(QuoteEntity $quote, $orderData = [])
+     {
+@@ -473,7 +499,7 @@ protected function resolveItems(QuoteEntity $quote)
+             }
+ 
+             $parentItemId = $quoteItem->getParentItemId();
+-            /** @var \Magento\Quote\Model\ResourceModel\Quote\Item $parentItem */
++            /** @var Item $parentItem */
+             if ($parentItemId && !isset($orderItems[$parentItemId])) {
+                 $orderItems[$parentItemId] = $this->quoteItemToOrderItem->convert(
+                     $quoteItem->getParentItem(),
+@@ -491,9 +517,9 @@ protected function resolveItems(QuoteEntity $quote)
+      *
+      * @param Quote $quote
+      * @param array $orderData
+-     * @return \Magento\Framework\Model\AbstractExtensibleModel|\Magento\Sales\Api\Data\OrderInterface|object
++     * @return AbstractExtensibleModel|OrderInterface|object
+      * @throws \Exception
+-     * @throws \Magento\Framework\Exception\LocalizedException
++     * @throws LocalizedException
+      */
+     protected function submitQuote(QuoteEntity $quote, $orderData = [])
+     {
+@@ -510,13 +536,13 @@ protected function submitQuote(QuoteEntity $quote, $orderData = [])
+         $quote->reserveOrderId();
+         if ($quote->isVirtual()) {
+             $this->dataObjectHelper->mergeDataObjects(
+-                \Magento\Sales\Api\Data\OrderInterface::class,
++                OrderInterface::class,
+                 $order,
+                 $this->quoteAddressToOrder->convert($quote->getBillingAddress(), $orderData)
+             );
+         } else {
+             $this->dataObjectHelper->mergeDataObjects(
+-                \Magento\Sales\Api\Data\OrderInterface::class,
++                OrderInterface::class,
+                 $order,
+                 $this->quoteAddressToOrder->convert($quote->getShippingAddress(), $orderData)
+             );
+@@ -683,13 +709,13 @@ protected function _prepareCustomerQuote($quote)
+      * Remove related to order and quote addresses and submit exception to further processing.
+      *
+      * @param Quote $quote
+-     * @param \Magento\Sales\Api\Data\OrderInterface $order
++     * @param OrderInterface $order
+      * @param \Exception $e
+      * @throws \Exception
+      */
+     private function rollbackAddresses(
+         QuoteEntity $quote,
+-        \Magento\Sales\Api\Data\OrderInterface $order,
++        OrderInterface $order,
+         \Exception $e
+     ): void {
+         try {
+diff --git a/vendor/magento/module-quote/Test/Unit/Model/QuoteManagementTest.php b/vendor/magento/module-quote/Test/Unit/Model/QuoteManagementTest.php
+index 7ada58789fa0..b31a07d53aeb 100644
+--- a/vendor/magento/module-quote/Test/Unit/Model/QuoteManagementTest.php
++++ b/vendor/magento/module-quote/Test/Unit/Model/QuoteManagementTest.php
+@@ -18,6 +18,7 @@
+ use Magento\Customer\Api\Data\GroupInterface;
+ use Magento\Customer\Model\Customer;
+ use Magento\Customer\Model\CustomerFactory;
++use Magento\Customer\Model\Session as CustomerSession;
+ use Magento\Framework\Api\DataObjectHelper;
+ use Magento\Framework\App\RequestInterface;
+ use Magento\Framework\Event\ManagerInterface;
+@@ -274,7 +275,7 @@ protected function setUp(): void
+             )
+             ->disableOriginalConstructor()
+             ->getMock();
+-        $this->customerSessionMock = $this->createMock(\Magento\Customer\Model\Session::class);
++        $this->customerSessionMock = $this->createMock(CustomerSession::class);
+         $this->accountManagementMock = $this->getMockForAbstractClass(AccountManagementInterface::class);
+ 
+         $this->quoteFactoryMock = $this->createPartialMock(QuoteFactory::class, ['create']);
+@@ -737,11 +738,9 @@ public function testSubmit(): void
+         $convertedShipping = $this->createPartialMockForAbstractClass(OrderAddressInterface::class, ['setData']);
+         $convertedPayment = $this->getMockForAbstractClass(OrderPaymentInterface::class);
+         $convertedQuoteItem = $this->getMockForAbstractClass(OrderItemInterface::class);
+-
+         $addresses = [$convertedShipping, $convertedBilling];
+         $quoteItems = [$quoteItem];
+         $convertedItems = [$convertedQuoteItem];
+-
+         $quote = $this->getQuote(
+             $isGuest,
+             $isVirtual,
+@@ -976,9 +975,6 @@ public function testPlaceOrder(): void
+         $this->quoteMock->expects($this->once())
+             ->method('getCheckoutMethod')
+             ->willReturn(Onepage::METHOD_CUSTOMER);
+-        $this->quoteMock->expects($this->never())
+-            ->method('setCustomerIsGuest')
+-            ->with(true);
+ 
+         $this->remoteAddressMock
+             ->method('getRemoteAddress')
+diff --git a/vendor/magento/module-quote-graph-ql/Model/Cart/GetCartForUser.php b/vendor/magento/module-quote-graph-ql/Model/Cart/GetCartForUser.php
+index 36848fa9d7f9..eb38fbe973da 100644
+--- a/vendor/magento/module-quote-graph-ql/Model/Cart/GetCartForUser.php
++++ b/vendor/magento/module-quote-graph-ql/Model/Cart/GetCartForUser.php
+@@ -12,6 +12,7 @@
+ use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
+ use Magento\Framework\GraphQl\Exception\GraphQlInputException;
+ use Magento\Framework\GraphQl\Exception\GraphQlNoSuchEntityException;
++use Magento\Quote\Api\CartManagementInterface;
+ use Magento\Quote\Api\CartRepositoryInterface;
+ use Magento\Quote\Model\MaskedQuoteIdToQuoteIdInterface;
+ use Magento\Quote\Model\Quote;
+@@ -32,6 +33,11 @@ class GetCartForUser
+      */
+     private $cartRepository;
+ 
++    /**
++     * @var CheckCartCheckoutAllowance
++     */
++    private $checkoutAllowance;
++
+     /**
+      * @var StoreRepositoryInterface
+      */
+@@ -40,15 +46,18 @@ class GetCartForUser
+     /**
+      * @param MaskedQuoteIdToQuoteIdInterface $maskedQuoteIdToQuoteId
+      * @param CartRepositoryInterface $cartRepository
++     * @param CheckCartCheckoutAllowance $checkoutAllowance
+      * @param StoreRepositoryInterface $storeRepository
+      */
+     public function __construct(
+         MaskedQuoteIdToQuoteIdInterface $maskedQuoteIdToQuoteId,
+         CartRepositoryInterface $cartRepository,
++        CheckCartCheckoutAllowance $checkoutAllowance,
+         StoreRepositoryInterface $storeRepository = null
+     ) {
+         $this->maskedQuoteIdToQuoteId = $maskedQuoteIdToQuoteId;
+         $this->cartRepository = $cartRepository;
++        $this->checkoutAllowance = $checkoutAllowance;
+         $this->storeRepository = $storeRepository ?: ObjectManager::getInstance()->get(StoreRepositoryInterface::class);
+     }
+ 
+@@ -107,6 +116,36 @@ public function execute(string $cartHash, ?int $customerId, int $storeId): Quote
+         return $cart;
+     }
+ 
++    /**
++     * Gets the cart for the user validated and configured for guest checkout if applicable
++     *
++     * @param string $cartHash
++     * @param int|null $customerId
++     * @param int $storeId
++     * @return Quote
++     * @throws GraphQlAuthorizationException
++     * @throws GraphQlInputException
++     * @throws GraphQlNoSuchEntityException
++     */
++    public function getCartForCheckout(string $cartHash, ?int $customerId, int $storeId): Quote
++    {
++        try {
++            $cart = $this->execute($cartHash, $customerId, $storeId);
++        } catch (NoSuchEntityException $e) {
++            throw new GraphQlNoSuchEntityException(__($e->getMessage()), $e);
++        }
++        $this->checkoutAllowance->execute($cart);
++
++        if ((null === $customerId || 0 === $customerId)) {
++            if (!$cart->getCustomerEmail()) {
++                throw new GraphQlInputException(__("Guest email for cart is missing."));
++            }
++            $cart->setCheckoutMethod(CartManagementInterface::METHOD_GUEST);
++        }
++
++        return $cart;
++    }
++
+     /**
+      * Sets cart currency based on specified store.
+      *
+diff --git a/vendor/magento/module-quote-graph-ql/Model/Cart/Payment/PaymentMethodBuilder.php b/vendor/magento/module-quote-graph-ql/Model/Cart/Payment/PaymentMethodBuilder.php
+new file mode 100644
+index 000000000000..73320f5b1a7c
+--- /dev/null
++++ b/vendor/magento/module-quote-graph-ql/Model/Cart/Payment/PaymentMethodBuilder.php
+@@ -0,0 +1,68 @@
++<?php
++/**
++ * Copyright © Magento, Inc. All rights reserved.
++ * See COPYING.txt for license details.
++ */
++declare(strict_types=1);
++
++namespace Magento\QuoteGraphQl\Model\Cart\Payment;
++
++use Magento\Framework\GraphQl\Exception\GraphQlInputException;
++use Magento\Quote\Api\Data\PaymentInterface;
++use Magento\Quote\Api\Data\PaymentInterfaceFactory;
++
++/**
++ * Build payment method objects
++ */
++class PaymentMethodBuilder
++{
++    /**
++     * @var PaymentInterfaceFactory
++     */
++    private $paymentFactory;
++
++    /**
++     * @var AdditionalDataProviderPool
++     */
++    private $paymentDataProvider;
++
++    /**
++     * @param PaymentInterfaceFactory $paymentFactory
++     * @param AdditionalDataProviderPool $paymentDataProvider
++     */
++    public function __construct(
++        PaymentInterfaceFactory $paymentFactory,
++        AdditionalDataProviderPool $paymentDataProvider
++    ) {
++        $this->paymentFactory = $paymentFactory;
++        $this->paymentDataProvider = $paymentDataProvider;
++    }
++
++    /**
++     * Build a PaymentInterface object from the supplied data array
++     *
++     * @param array $paymentData
++     * @return PaymentInterface
++     * @throws GraphQlInputException
++     */
++    public function build(array $paymentData): PaymentInterface
++    {
++        if (!isset($paymentData['code']) || empty($paymentData['code'])) {
++            throw new GraphQlInputException(__('Required parameter "code" for "payment_method" is missing.'));
++        }
++        $paymentMethodCode = $paymentData['code'];
++
++        $poNumber = $paymentData['purchase_order_number'] ?? null;
++        $additionalData = $this->paymentDataProvider->getData($paymentMethodCode, $paymentData);
++
++        return $this->paymentFactory->create(
++            [
++                'data' => [
++                    PaymentInterface::KEY_METHOD => $paymentMethodCode,
++                    PaymentInterface::KEY_PO_NUMBER => $poNumber,
++                    PaymentInterface::KEY_ADDITIONAL_DATA => $additionalData,
++                ],
++            ]
++        );
++    }
++}
+diff --git a/vendor/magento/module-quote-graph-ql/Model/Cart/PlaceOrder.php b/vendor/magento/module-quote-graph-ql/Model/Cart/PlaceOrder.php
+new file mode 100644
+index 000000000000..b1a7ed3bdc5b
+--- /dev/null
++++ b/vendor/magento/module-quote-graph-ql/Model/Cart/PlaceOrder.php
+@@ -0,0 +1,63 @@
++<?php
++/**
++ * Copyright © Magento, Inc. All rights reserved.
++ * See COPYING.txt for license details.
++ */
++declare(strict_types=1);
++
++namespace Magento\QuoteGraphQl\Model\Cart;
++
++use Magento\Framework\Exception\LocalizedException;
++use Magento\Framework\Exception\NoSuchEntityException;
++use Magento\Quote\Api\CartManagementInterface;
++use Magento\Quote\Api\PaymentMethodManagementInterface;
++use Magento\Quote\Model\Quote;
++
++/**
++ * Place an order
++ */
++class PlaceOrder
++{
++    /**
++     * @var PaymentMethodManagementInterface
++     */
++    private $paymentManagement;
++
++    /**
++     * @var CartManagementInterface
++     */
++    private $cartManagement;
++
++    /**
++     * @param PaymentMethodManagementInterface $paymentManagement
++     * @param CartManagementInterface $cartManagement
++     */
++    public function __construct(
++        PaymentMethodManagementInterface $paymentManagement,
++        CartManagementInterface $cartManagement
++    ) {
++        $this->paymentManagement = $paymentManagement;
++        $this->cartManagement = $cartManagement;
++    }
++
++    /**
++     * Place an order
++     *
++     * @param Quote $cart
++     * @param string $maskedCartId
++     * @param int $userId
++     * @return int
++     *
++     * @throws LocalizedException
++     * @throws NoSuchEntityException
++     *
++     * @SuppressWarnings(PHPMD.UnusedFormalParameter)
++     */
++    public function execute(Quote $cart, string $maskedCartId, int $userId): int
++    {
++        $cartId = (int)$cart->getId();
++        $paymentMethod = $this->paymentManagement->get($cartId);
++
++        return (int)$this->cartManagement->placeOrder($cartId, $paymentMethod);
++    }
++}
+diff --git a/vendor/magento/module-quote-graph-ql/Model/Cart/SetPaymentAndPlaceOrder.php b/vendor/magento/module-quote-graph-ql/Model/Cart/SetPaymentAndPlaceOrder.php
+new file mode 100644
+index 000000000000..3ebf441fd980
+--- /dev/null
++++ b/vendor/magento/module-quote-graph-ql/Model/Cart/SetPaymentAndPlaceOrder.php
+@@ -0,0 +1,62 @@
++<?php
++/**
++ * Copyright © Magento, Inc. All rights reserved.
++ * See COPYING.txt for license details.
++ */
++declare(strict_types=1);
++
++namespace Magento\QuoteGraphQl\Model\Cart;
++
++use Magento\Framework\Exception\LocalizedException;
++use Magento\Framework\Exception\NoSuchEntityException;
++use Magento\Framework\GraphQl\Exception\GraphQlInputException;
++use Magento\Framework\GraphQl\Exception\GraphQlNoSuchEntityException;
++use Magento\Quote\Model\Quote;
++
++/**
++ * Set payment method and place order
++ */
++class SetPaymentAndPlaceOrder
++{
++    /**
++     * @var SetPaymentMethodOnCart
++     */
++    private $setPaymentMethod;
++
++    /**
++     * @var PlaceOrder
++     */
++    private $placeOrder;
++
++    /**
++     * @param SetPaymentMethodOnCart $setPaymentMethod
++     * @param PlaceOrder $placeOrder
++     */
++    public function __construct(
++        SetPaymentMethodOnCart $setPaymentMethod,
++        PlaceOrder $placeOrder
++    ) {
++        $this->setPaymentMethod = $setPaymentMethod;
++        $this->placeOrder = $placeOrder;
++    }
++
++    /**
++     * Set payment method and place order
++     *
++     * @param Quote $cart
++     * @param string $maskedCartId
++     * @param int $userId
++     * @param array $paymentData
++     * @return int
++     *
++     * @throws GraphQlInputException
++     * @throws GraphQlNoSuchEntityException
++     * @throws LocalizedException
++     * @throws NoSuchEntityException
++     */
++    public function execute(Quote $cart, string $maskedCartId, int $userId, array $paymentData): int
++    {
++        $this->setPaymentMethod->execute($cart, $paymentData);
++        return $this->placeOrder->execute($cart, $maskedCartId, $userId);
++    }
++}
+diff --git a/vendor/magento/module-quote-graph-ql/Model/Cart/SetPaymentMethodOnCart.php b/vendor/magento/module-quote-graph-ql/Model/Cart/SetPaymentMethodOnCart.php
+index 56ff0a4edb03..ed4d4c70e29b 100644
+--- a/vendor/magento/module-quote-graph-ql/Model/Cart/SetPaymentMethodOnCart.php
++++ b/vendor/magento/module-quote-graph-ql/Model/Cart/SetPaymentMethodOnCart.php
+@@ -15,11 +15,9 @@
+ use Magento\Framework\Exception\NoSuchEntityException;
+ use Magento\Framework\GraphQl\Exception\GraphQlInputException;
+ use Magento\Framework\GraphQl\Exception\GraphQlNoSuchEntityException;
+-use Magento\Quote\Api\Data\PaymentInterface;
+-use Magento\Quote\Api\Data\PaymentInterfaceFactory;
+ use Magento\Quote\Api\PaymentMethodManagementInterface;
+ use Magento\Quote\Model\Quote;
+-use Magento\QuoteGraphQl\Model\Cart\Payment\AdditionalDataProviderPool;
++use Magento\QuoteGraphQl\Model\Cart\Payment\PaymentMethodBuilder;
+ 
+ /**
+  * Saves related payment method info for a cart.
+@@ -34,14 +32,9 @@ class SetPaymentMethodOnCart
+     private $paymentMethodManagement;
+ 
+     /**
+-     * @var PaymentInterfaceFactory
++     * @var PaymentMethodBuilder
+      */
+-    private $paymentFactory;
+-
+-    /**
+-     * @var AdditionalDataProviderPool
+-     */
+-    private $additionalDataProviderPool;
++    private $paymentMethodBuilder;
+ 
+     /**
+      * @var PaymentSavingRateLimiterInterface
+@@ -50,8 +43,7 @@ class SetPaymentMethodOnCart
+ 
+     /**
+      * @param PaymentMethodManagementInterface $paymentMethodManagement
+-     * @param PaymentInterfaceFactory $paymentFactory
+-     * @param AdditionalDataProviderPool $additionalDataProviderPool
++     * @param PaymentMethodBuilder $paymentMethodBuilder
+      * @param PaymentProcessingRateLimiterInterface|null $paymentRateLimiter
+      * @param PaymentSavingRateLimiterInterface|null $savingRateLimiter
+      *
+@@ -59,14 +51,12 @@ class SetPaymentMethodOnCart
+      */
+     public function __construct(
+         PaymentMethodManagementInterface $paymentMethodManagement,
+-        PaymentInterfaceFactory $paymentFactory,
+-        AdditionalDataProviderPool $additionalDataProviderPool,
++        PaymentMethodBuilder $paymentMethodBuilder,
+         ?PaymentProcessingRateLimiterInterface $paymentRateLimiter = null,
+         ?PaymentSavingRateLimiterInterface $savingRateLimiter = null
+     ) {
+         $this->paymentMethodManagement = $paymentMethodManagement;
+-        $this->paymentFactory = $paymentFactory;
+-        $this->additionalDataProviderPool = $additionalDataProviderPool;
++        $this->paymentMethodBuilder = $paymentMethodBuilder;
+         $this->paymentRateLimiter = $savingRateLimiter
+             ?? ObjectManager::getInstance()->get(PaymentSavingRateLimiterInterface::class);
+     }
+@@ -92,23 +82,7 @@ public function execute(Quote $cart, array $paymentData): void
+             throw new GraphQlInputException(__($exception->getMessage()), $exception);
+         }
+ 
+-        if (!isset($paymentData['code']) || empty($paymentData['code'])) {
+-            throw new GraphQlInputException(__('Required parameter "code" for "payment_method" is missing.'));
+-        }
+-        $paymentMethodCode = $paymentData['code'];
+-
+-        $poNumber = $paymentData['purchase_order_number'] ?? null;
+-        $additionalData = $this->additionalDataProviderPool->getData($paymentMethodCode, $paymentData);
+-
+-        $payment = $this->paymentFactory->create(
+-            [
+-                'data' => [
+-                    PaymentInterface::KEY_METHOD => $paymentMethodCode,
+-                    PaymentInterface::KEY_PO_NUMBER => $poNumber,
+-                    PaymentInterface::KEY_ADDITIONAL_DATA => $additionalData,
+-                ],
+-            ]
+-        );
++        $payment = $this->paymentMethodBuilder->build($paymentData);
+ 
+         try {
+             $this->paymentMethodManagement->set($cart->getId(), $payment);
+diff --git a/vendor/magento/module-quote-graph-ql/Model/Resolver/PlaceOrder.php b/vendor/magento/module-quote-graph-ql/Model/Resolver/PlaceOrder.php
+index 397455a2412a..bee94eb00970 100644
+--- a/vendor/magento/module-quote-graph-ql/Model/Resolver/PlaceOrder.php
++++ b/vendor/magento/module-quote-graph-ql/Model/Resolver/PlaceOrder.php
+@@ -10,65 +10,48 @@
+ use Magento\Framework\Exception\LocalizedException;
+ use Magento\Framework\Exception\NoSuchEntityException;
+ use Magento\Framework\GraphQl\Config\Element\Field;
++use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
+ use Magento\Framework\GraphQl\Exception\GraphQlInputException;
+ use Magento\Framework\GraphQl\Exception\GraphQlNoSuchEntityException;
+ use Magento\Framework\GraphQl\Query\ResolverInterface;
+ use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
+-use Magento\Quote\Api\CartManagementInterface;
+-use Magento\Quote\Api\PaymentMethodManagementInterface;
+ use Magento\QuoteGraphQl\Model\Cart\GetCartForUser;
++use Magento\QuoteGraphQl\Model\Cart\PlaceOrder as PlaceOrderModel;
+ use Magento\Sales\Api\OrderRepositoryInterface;
+-use Magento\QuoteGraphQl\Model\Cart\CheckCartCheckoutAllowance;
+ 
+ /**
+- * @inheritdoc
++ * Resolver for placing order after payment method has already been set
+  */
+ class PlaceOrder implements ResolverInterface
+ {
+-    /**
+-     * @var CartManagementInterface
+-     */
+-    private $cartManagement;
+-
+     /**
+      * @var GetCartForUser
+      */
+     private $getCartForUser;
+ 
+     /**
+-     * @var OrderRepositoryInterface
+-     */
+-    private $orderRepository;
+-
+-    /**
+-     * @var CheckCartCheckoutAllowance
++     * @var PlaceOrderModel
+      */
+-    private $checkCartCheckoutAllowance;
++    private $placeOrder;
+ 
+     /**
+-     * @var PaymentMethodManagementInterface
++     * @var OrderRepositoryInterface
+      */
+-    private $paymentMethodManagement;
++    private $orderRepository;
+ 
+     /**
+      * @param GetCartForUser $getCartForUser
+-     * @param CartManagementInterface $cartManagement
++     * @param PlaceOrderModel $placeOrder
+      * @param OrderRepositoryInterface $orderRepository
+-     * @param CheckCartCheckoutAllowance $checkCartCheckoutAllowance
+-     * @param PaymentMethodManagementInterface $paymentMethodManagement
+      */
+     public function __construct(
+         GetCartForUser $getCartForUser,
+-        CartManagementInterface $cartManagement,
+-        OrderRepositoryInterface $orderRepository,
+-        CheckCartCheckoutAllowance $checkCartCheckoutAllowance,
+-        PaymentMethodManagementInterface $paymentMethodManagement
++        PlaceOrderModel $placeOrder,
++        OrderRepositoryInterface $orderRepository
+     ) {
+         $this->getCartForUser = $getCartForUser;
+-        $this->cartManagement = $cartManagement;
++        $this->placeOrder = $placeOrder;
+         $this->orderRepository = $orderRepository;
+-        $this->checkCartCheckoutAllowance = $checkCartCheckoutAllowance;
+-        $this->paymentMethodManagement = $paymentMethodManagement;
+     }
+ 
+     /**
+@@ -80,34 +63,27 @@ public function resolve(Field $field, $context, ResolveInfo $info, array $value
+             throw new GraphQlInputException(__('Required parameter "cart_id" is missing'));
+         }
+         $maskedCartId = $args['input']['cart_id'];
+-
++        $userId = (int)$context->getUserId();
+         $storeId = (int)$context->getExtensionAttributes()->getStore()->getId();
+-        $cart = $this->getCartForUser->execute($maskedCartId, $context->getUserId(), $storeId);
+-        $this->checkCartCheckoutAllowance->execute($cart);
+-
+-        if ((int)$context->getUserId() === 0) {
+-            if (!$cart->getCustomerEmail()) {
+-                throw new GraphQlInputException(__("Guest email for cart is missing."));
+-            }
+-            $cart->setCheckoutMethod(CartManagementInterface::METHOD_GUEST);
+-        }
+ 
+         try {
+-            $cartId = $cart->getId();
+-            $orderId = $this->cartManagement->placeOrder($cartId, $this->paymentMethodManagement->get($cartId));
++            $cart = $this->getCartForUser->getCartForCheckout($maskedCartId, $userId, $storeId);
++            $orderId = $this->placeOrder->execute($cart, $maskedCartId, $userId);
+             $order = $this->orderRepository->get($orderId);
+-
+-            return [
+-                'order' => [
+-                    'order_number' => $order->getIncrementId(),
+-                    // @deprecated The order_id field is deprecated, use order_number instead
+-                    'order_id' => $order->getIncrementId(),
+-                ],
+-            ];
++        } catch (GraphQlInputException | GraphQlNoSuchEntityException | GraphQlAuthorizationException $e) {
++            throw $e;
+         } catch (NoSuchEntityException $e) {
+             throw new GraphQlNoSuchEntityException(__($e->getMessage()), $e);
+         } catch (LocalizedException $e) {
+             throw new GraphQlInputException(__('Unable to place order: %message', ['message' => $e->getMessage()]), $e);
+         }
++
++        return [
++            'order' => [
++                'order_number' => $order->getIncrementId(),
++                // @deprecated The order_id field is deprecated, use order_number instead
++                'order_id' => $order->getIncrementId(),
++            ],
++        ];
+     }
+ }
+diff --git a/vendor/magento/module-quote-graph-ql/Model/Resolver/SetPaymentAndPlaceOrder.php b/vendor/magento/module-quote-graph-ql/Model/Resolver/SetPaymentAndPlaceOrder.php
+index a2ac94a0f28c..500c2aa35999 100644
+--- a/vendor/magento/module-quote-graph-ql/Model/Resolver/SetPaymentAndPlaceOrder.php
++++ b/vendor/magento/module-quote-graph-ql/Model/Resolver/SetPaymentAndPlaceOrder.php
+@@ -10,13 +10,13 @@
+ use Magento\Framework\Exception\LocalizedException;
+ use Magento\Framework\Exception\NoSuchEntityException;
+ use Magento\Framework\GraphQl\Config\Element\Field;
++use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
+ use Magento\Framework\GraphQl\Exception\GraphQlInputException;
+ use Magento\Framework\GraphQl\Exception\GraphQlNoSuchEntityException;
+ use Magento\Framework\GraphQl\Query\ResolverInterface;
+ use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
+-use Magento\Quote\Api\CartManagementInterface;
+ use Magento\QuoteGraphQl\Model\Cart\GetCartForUser;
+-use Magento\QuoteGraphQl\Model\Cart\SetPaymentMethodOnCart;
++use Magento\QuoteGraphQl\Model\Cart\SetPaymentAndPlaceOrder as SetPaymentAndPlaceOrderModel;
+ use Magento\Sales\Api\OrderRepositoryInterface;
+ 
+ /**
+@@ -28,42 +28,34 @@
+  */
+ class SetPaymentAndPlaceOrder implements ResolverInterface
+ {
+-    /**
+-     * @var CartManagementInterface
+-     */
+-    private $cartManagement;
+-
+     /**
+      * @var GetCartForUser
+      */
+     private $getCartForUser;
+ 
+     /**
+-     * @var OrderRepositoryInterface
++     * @var SetPaymentAndPlaceOrderModel
+      */
+-    private $orderRepository;
++    private $setPaymentAndPlaceOrder;
+ 
+     /**
+-     * @var SetPaymentMethodOnCart
++     * @var OrderRepositoryInterface
+      */
+-    private $setPaymentMethodOnCart;
++    private $orderRepository;
+ 
+     /**
+      * @param GetCartForUser $getCartForUser
+-     * @param CartManagementInterface $cartManagement
++     * @param SetPaymentAndPlaceOrderModel $setPaymentAndPlaceOrder
+      * @param OrderRepositoryInterface $orderRepository
+-     * @param SetPaymentMethodOnCart $setPaymentMethodOnCart
+      */
+     public function __construct(
+         GetCartForUser $getCartForUser,
+-        CartManagementInterface $cartManagement,
+-        OrderRepositoryInterface $orderRepository,
+-        SetPaymentMethodOnCart $setPaymentMethodOnCart
++        SetPaymentAndPlaceOrderModel $setPaymentAndPlaceOrder,
++        OrderRepositoryInterface $orderRepository
+     ) {
+         $this->getCartForUser = $getCartForUser;
+-        $this->cartManagement = $cartManagement;
++        $this->setPaymentAndPlaceOrder = $setPaymentAndPlaceOrder;
+         $this->orderRepository = $orderRepository;
+-        $this->setPaymentMethodOnCart = $setPaymentMethodOnCart;
+     }
+ 
+     /**
+@@ -82,33 +74,27 @@ public function resolve(Field $field, $context, ResolveInfo $info, array $value
+         $maskedCartId = $args['input']['cart_id'];
+         $paymentData = $args['input']['payment_method'];
+ 
++        $userId = (int)$context->getUserId();
+         $storeId = (int)$context->getExtensionAttributes()->getStore()->getId();
+-        $cart = $this->getCartForUser->execute($maskedCartId, $context->getUserId(), $storeId);
+-
+-        if ((int)$context->getUserId() === 0) {
+-            if (!$cart->getCustomerEmail()) {
+-                throw new GraphQlInputException(__("Guest email for cart is missing."));
+-            }
+-            $cart->setCheckoutMethod(CartManagementInterface::METHOD_GUEST);
+-        }
+-
+-        $this->setPaymentMethodOnCart->execute($cart, $paymentData);
+ 
+         try {
+-            $orderId = $this->cartManagement->placeOrder($cart->getId());
++            $cart = $this->getCartForUser->getCartForCheckout($maskedCartId, $userId, $storeId);
++            $orderId = $this->setPaymentAndPlaceOrder->execute($cart, $maskedCartId, $userId, $paymentData);
+             $order = $this->orderRepository->get($orderId);
+-
+-            return [
+-                'order' => [
+-                    'order_number' => $order->getIncrementId(),
+-                    // @deprecated The order_id field is deprecated, use order_number instead
+-                    'order_id' => $order->getIncrementId(),
+-                ],
+-            ];
++        } catch (GraphQlInputException | GraphQlNoSuchEntityException | GraphQlAuthorizationException $e) {
++            throw $e;
+         } catch (NoSuchEntityException $e) {
+             throw new GraphQlNoSuchEntityException(__($e->getMessage()), $e);
+         } catch (LocalizedException $e) {
+             throw new GraphQlInputException(__('Unable to place order: %message', ['message' => $e->getMessage()]), $e);
+         }
++
++        return [
++            'order' => [
++                'order_number' => $order->getIncrementId(),
++                // @deprecated The order_id field is deprecated, use order_number instead
++                'order_id' => $order->getIncrementId(),
++            ],
++        ];
+     }
+ }
+diff --git a/vendor/magento/module-sales-graph-ql/Model/Order/OrderPayments.php b/vendor/magento/module-sales-graph-ql/Model/Order/OrderPayments.php
+index 991f36663448..5e1af2d1bb95 100644
+--- a/vendor/magento/module-sales-graph-ql/Model/Order/OrderPayments.php
++++ b/vendor/magento/module-sales-graph-ql/Model/Order/OrderPayments.php
+@@ -23,6 +23,9 @@ class OrderPayments
+     public function getOrderPaymentMethod(OrderInterface $orderModel): array
+     {
+         $orderPayment = $orderModel->getPayment();
++        if (!$orderPayment) {
++            return [];
++        }
+         return [
+             [
+                 'name' => $orderPayment->getAdditionalInformation()['method_title'] ?? '',
+diff --git a/dev/tests/integration/testsuite/Magento/GraphQl/Quote/_files/apply_coupon_100percent_discount.php b/dev/tests/integration/testsuite/Magento/GraphQl/Quote/_files/apply_coupon_100percent_discount.php
+new file mode 100644
+index 000000000000..7b17a814dfe8
+--- /dev/null
++++ b/dev/tests/integration/testsuite/Magento/GraphQl/Quote/_files/apply_coupon_100percent_discount.php
+@@ -0,0 +1,22 @@
++<?php
++/**
++ * Copyright © Magento, Inc. All rights reserved.
++ * See COPYING.txt for license details.
++ */
++declare(strict_types=1);
++
++use Magento\Quote\Api\CouponManagementInterface;
++use Magento\Quote\Model\QuoteFactory;
++use Magento\Quote\Model\ResourceModel\Quote as QuoteResource;
++use Magento\TestFramework\Helper\Bootstrap;
++
++/** @var CouponManagementInterface $couponManagement */
++$couponManagement = Bootstrap::getObjectManager()->get(CouponManagementInterface::class);
++/** @var QuoteFactory $quoteFactory */
++$quoteFactory = Bootstrap::getObjectManager()->get(QuoteFactory::class);
++/** @var QuoteResource $quoteResource */
++$quoteResource = Bootstrap::getObjectManager()->get(QuoteResource::class);
++
++$quote = $quoteFactory->create();
++$quoteResource->load($quote, 'test_quote', 'reserved_order_id');
++$couponManagement->set($quote->getId(), 'free_use');
+diff --git a/dev/tests/integration/testsuite/Magento/GraphQl/Quote/_files/apply_coupon_100percent_rollback.php b/dev/tests/integration/testsuite/Magento/GraphQl/Quote/_files/apply_coupon_100percent_rollback.php
+new file mode 100644
+index 000000000000..d3d8623cee49
+--- /dev/null
++++ b/dev/tests/integration/testsuite/Magento/GraphQl/Quote/_files/apply_coupon_100percent_rollback.php
+@@ -0,0 +1,10 @@
++<?php
++/**
++ * Copyright © Magento, Inc. All rights reserved.
++ * See COPYING.txt for license details.
++ */
++declare(strict_types=1);
++
++use Magento\TestFramework\Workaround\Override\Fixture\Resolver;
++
++Resolver::getInstance()->requireDataFixture('Magento/GraphQl/module-quote/_files/apply_coupon_rollback.php');
+diff --git a/dev/tests/integration/testsuite/Magento/GraphQl/Quote/_files/set_freeshipping_shipping_method.php b/dev/tests/integration/testsuite/Magento/GraphQl/Quote/_files/set_freeshipping_shipping_method.php
+new file mode 100644
+index 000000000000..5cd90534a9bd
+--- /dev/null
++++ b/dev/tests/integration/testsuite/Magento/GraphQl/Quote/_files/set_freeshipping_shipping_method.php
+@@ -0,0 +1,36 @@
++<?php
++/**
++ * Copyright © Magento, Inc. All rights reserved.
++ * See COPYING.txt for license details.
++ */
++declare(strict_types=1);
++
++use Magento\Checkout\Api\Data\ShippingInformationInterface;
++use Magento\Checkout\Api\Data\ShippingInformationInterfaceFactory;
++use Magento\Checkout\Api\ShippingInformationManagementInterface;
++use Magento\Quote\Model\QuoteFactory;
++use Magento\Quote\Model\ResourceModel\Quote as QuoteResource;
++use Magento\TestFramework\Helper\Bootstrap;
++
++/** @var QuoteFactory $quoteFactory */
++$quoteFactory = Bootstrap::getObjectManager()->get(QuoteFactory::class);
++/** @var QuoteResource $quoteResource */
++$quoteResource = Bootstrap::getObjectManager()->get(QuoteResource::class);
++/** @var ShippingInformationInterfaceFactory $shippingInformationFactory */
++$shippingInformationFactory = Bootstrap::getObjectManager()->get(ShippingInformationInterfaceFactory::class);
++/** @var ShippingInformationManagementInterface $shippingInformationManagement */
++$shippingInformationManagement = Bootstrap::getObjectManager()->get(ShippingInformationManagementInterface::class);
++
++$quote = $quoteFactory->create();
++$quoteResource->load($quote, 'test_quote', 'reserved_order_id');
++$quoteAddress = $quote->getShippingAddress();
++
++/** @var ShippingInformationInterface $shippingInformation */
++$shippingInformation = $shippingInformationFactory->create([
++    'data' => [
++        ShippingInformationInterface::SHIPPING_ADDRESS => $quoteAddress,
++        ShippingInformationInterface::SHIPPING_CARRIER_CODE => 'freeshipping',
++        ShippingInformationInterface::SHIPPING_METHOD_CODE => 'freeshipping',
++    ],
++]);
++$shippingInformationManagement->saveAddressInformation($quote->getId(), $shippingInformation);
+diff --git a/dev/tests/integration/testsuite/Magento/SalesRule/_files/cart_rule_100_percent_off_with_coupon.php b/dev/tests/integration/testsuite/Magento/SalesRule/_files/cart_rule_100_percent_off_with_coupon.php
+new file mode 100644
+index 000000000000..3c1c6cebcb16
+--- /dev/null
++++ b/dev/tests/integration/testsuite/Magento/SalesRule/_files/cart_rule_100_percent_off_with_coupon.php
+@@ -0,0 +1,49 @@
++<?php
++/**
++ * Copyright © Magento, Inc. All rights reserved.
++ * See COPYING.txt for license details.
++ */
++declare(strict_types=1);
++
++use Magento\SalesRule\Model\Coupon;
++use Magento\SalesRule\Model\Rule;
++use Magento\SalesRule\Api\CouponRepositoryInterface;
++
++$objectManager = \Magento\TestFramework\Helper\Bootstrap::getObjectManager();
++/** @var Magento\Framework\Registry $registry */
++$registry = $objectManager->get(\Magento\Framework\Registry::class);
++
++/** @var \Magento\SalesRule\Model\Rule $salesRule */
++$salesRule = $objectManager->create(\Magento\SalesRule\Model\Rule::class);
++$salesRule->setData(
++    [
++        'name' => '100% discount on orders for registered customers',
++        'is_active' => 1,
++        'customer_group_ids' => [1],
++        'coupon_type' => Rule::COUPON_TYPE_SPECIFIC,
++        'conditions' => [],
++        'simple_action' => 'by_percent',
++        'discount_amount' => 100,
++        'discount_step' => 0,
++        'stop_rules_processing' => 1,
++        'website_ids' => [
++            \Magento\TestFramework\Helper\Bootstrap::getObjectManager()->get(
++                \Magento\Store\Model\StoreManagerInterface::class
++            )->getWebsite()->getId(),
++        ],
++        'discount_qty' => 0,
++        'apply_to_shipping' => 1,
++        'simple_free_shipping' => 1,
++    ]
++);
++$objectManager->get(\Magento\SalesRule\Model\ResourceModel\Rule::class)->save($salesRule);
++
++// Create specific coupon to cover 100% cart total
++$coupon = $objectManager->create(Coupon::class);
++$coupon->setRuleId($salesRule->getId())
++    ->setCode('free_use')
++    ->setType(0);
++
++/** @var CouponRepositoryInterface $couponRepository */
++$couponRepository = $objectManager->get(CouponRepositoryInterface::class);
++$couponRepository->save($coupon);
+diff --git a/dev/tests/integration/testsuite/Magento/SalesRule/_files/cart_rule_100_percent_off_with_coupon_rollback.php b/dev/tests/integration/testsuite/Magento/SalesRule/_files/cart_rule_100_percent_off_with_coupon_rollback.php
+new file mode 100644
+index 000000000000..1300142c7487
+--- /dev/null
++++ b/dev/tests/integration/testsuite/Magento/SalesRule/_files/cart_rule_100_percent_off_with_coupon_rollback.php
+@@ -0,0 +1,42 @@
++<?php
++/**
++ * Copyright © Magento, Inc. All rights reserved.
++ * See COPYING.txt for license details.
++ */
++declare(strict_types=1);
++
++use Magento\Framework\Api\SearchCriteriaBuilder;
++use Magento\SalesRule\Api\CouponRepositoryInterface;
++use Magento\SalesRule\Api\RuleRepositoryInterface;
++use Magento\SalesRule\Model\Coupon;
++use Magento\SalesRule\Model\Rule;
++use Magento\TestFramework\Helper\Bootstrap;
++
++$objectManager = Bootstrap::getObjectManager();
++
++/** @var SearchCriteriaBuilder $searchCriteriaBuilder */
++$searchCriteriaBuilder = Bootstrap::getObjectManager()->get(SearchCriteriaBuilder::class);
++$searchCriteria = $searchCriteriaBuilder->addFilter('name', '100% discount on orders for registered customers')
++    ->create();
++
++/** @var RuleRepositoryInterface $ruleRepository */
++$ruleRepository = Bootstrap::getObjectManager()->get(RuleRepositoryInterface::class);
++$items = $ruleRepository->getList($searchCriteria)
++    ->getItems();
++
++$salesRule = array_pop($items);
++
++/** @var Rule $salesRule */
++if ($salesRule !== null) {
++    /** @var RuleRepositoryInterface $ruleRepository */
++    $ruleRepository = $objectManager->get(RuleRepositoryInterface::class);
++    $ruleRepository->deleteById($salesRule->getRuleId());
++}
++
++$coupon = $objectManager->create(Coupon::class);
++$coupon->loadByCode('free_use');
++if ($coupon->getCouponId()) {
++    /** @var CouponRepositoryInterface $couponRepository */
++    $couponRepository = $objectManager->get(CouponRepositoryInterface::class);
++    $couponRepository->deleteById($coupon->getCouponId());
++}
