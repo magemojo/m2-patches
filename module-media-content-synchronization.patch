@@ -1,0 +1,44 @@
+---
+ etc/queue_consumer.xml  | 2 +-
+ etc/queue_publisher.xml | 2 +-
+ etc/queue_topology.xml  | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/etc/queue_consumer.xml b/etc/queue_consumer.xml
+index 6a141c0..0813ce4 100644
+--- a/etc/queue_consumer.xml
++++ b/etc/queue_consumer.xml
+@@ -7,5 +7,5 @@
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/consumer.xsd">
+     <consumer name="media.content.synchronization" queue="media.content.synchronization"
+-              connection="db" handler="Magento\MediaContentSynchronization\Model\Consume::execute"/>
++              connection="amqp" handler="Magento\MediaContentSynchronization\Model\Consume::execute"/>
+ </config>
+diff --git a/etc/queue_publisher.xml b/etc/queue_publisher.xml
+index 9751d11..29f07c3 100644
+--- a/etc/queue_publisher.xml
++++ b/etc/queue_publisher.xml
+@@ -7,6 +7,6 @@
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/publisher.xsd">
+     <publisher topic="media.content.synchronization">
+-        <connection name="db" exchange="magento-db" disabled="false" />
++        <connection name="amqp" exchange="magento-db" disabled="false" />
+     </publisher>
+ </config>
+diff --git a/etc/queue_topology.xml b/etc/queue_topology.xml
+index 4dc43ef..1bafe26 100644
+--- a/etc/queue_topology.xml
++++ b/etc/queue_topology.xml
+@@ -7,7 +7,7 @@
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/topology.xsd">
+-    <exchange name="magento-db" type="topic" connection="db">
++    <exchange name="magento-db" type="topic" connection="amqp">
+         <binding id="MediaContentSynchronization" topic="media.content.synchronization"
+                  destinationType="queue" destination="media.content.synchronization"/>
+     </exchange>
+-- 
+2.32.0

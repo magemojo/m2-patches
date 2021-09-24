@@ -1,0 +1,44 @@
+---
+ etc/queue_consumer.xml  | 2 +-
+ etc/queue_publisher.xml | 2 +-
+ etc/queue_topology.xml  | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/etc/queue_consumer.xml b/etc/queue_consumer.xml
+index e4c06a4..634f8f4 100644
+--- a/etc/queue_consumer.xml
++++ b/etc/queue_consumer.xml
+@@ -6,5 +6,5 @@
+  */
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/consumer.xsd">
+-    <consumer name="media.storage.catalog.image.resize" queue="media.storage.catalog.image.resize" connection="db" maxMessages="100" consumerInstance="Magento\Framework\MessageQueue\Consumer" handler="Magento\MediaStorage\Model\ConsumerImageResize::process" />
++    <consumer name="media.storage.catalog.image.resize" queue="media.storage.catalog.image.resize" connection="amqp" maxMessages="100" consumerInstance="Magento\Framework\MessageQueue\Consumer" handler="Magento\MediaStorage\Model\ConsumerImageResize::process" />
+ </config>
+diff --git a/etc/queue_publisher.xml b/etc/queue_publisher.xml
+index dab99e2..c27b45d 100644
+--- a/etc/queue_publisher.xml
++++ b/etc/queue_publisher.xml
+@@ -7,6 +7,6 @@
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/publisher.xsd">
+     <publisher topic="media.storage.catalog.image.resize">
+-        <connection name="db" exchange="magento-db" />
++        <connection name="amqp" exchange="magento-db" />
+     </publisher>
+ </config>
+diff --git a/etc/queue_topology.xml b/etc/queue_topology.xml
+index 9bb1ca5..55accc7 100644
+--- a/etc/queue_topology.xml
++++ b/etc/queue_topology.xml
+@@ -6,7 +6,7 @@
+  */
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/topology.xsd">
+-    <exchange name="magento-db" type="topic" connection="db">
++    <exchange name="magento-db" type="topic" connection="amqp">
+         <binding id="imageResizeBinding" topic="media.storage.catalog.image.resize" destinationType="queue" destination="media.storage.catalog.image.resize"/>
+     </exchange>
+ </config>
+-- 
+2.32.0
