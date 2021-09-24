@@ -1,0 +1,52 @@
+---
+ etc/queue_consumer.xml  | 4 ++--
+ etc/queue_publisher.xml | 4 ++--
+ etc/queue_topology.xml  | 2 +-
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/etc/queue_consumer.xml b/etc/queue_consumer.xml
+index d9e66ae..d8df9b6 100644
+--- a/etc/queue_consumer.xml
++++ b/etc/queue_consumer.xml
+@@ -6,6 +6,6 @@
+  */
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/consumer.xsd">
+-    <consumer name="product_action_attribute.update" queue="product_action_attribute.update" connection="db" maxMessages="5000" consumerInstance="Magento\Framework\MessageQueue\Consumer" handler="Magento\Catalog\Model\Attribute\Backend\Consumer::process" />
+-    <consumer name="product_action_attribute.website.update" queue="product_action_attribute.website.update" connection="db" maxMessages="5000" consumerInstance="Magento\Framework\MessageQueue\Consumer" handler="Magento\Catalog\Model\Attribute\Backend\ConsumerWebsiteAssign::process" />
++    <consumer name="product_action_attribute.update" queue="product_action_attribute.update" connection="amqp" maxMessages="5000" consumerInstance="Magento\Framework\MessageQueue\Consumer" handler="Magento\Catalog\Model\Attribute\Backend\Consumer::process" />
++    <consumer name="product_action_attribute.website.update" queue="product_action_attribute.website.update" connection="amqp" maxMessages="5000" consumerInstance="Magento\Framework\MessageQueue\Consumer" handler="Magento\Catalog\Model\Attribute\Backend\ConsumerWebsiteAssign::process" />
+ </config>
+\ No newline at end of file
+diff --git a/etc/queue_publisher.xml b/etc/queue_publisher.xml
+index 1606ea4..8e9d3f9 100644
+--- a/etc/queue_publisher.xml
++++ b/etc/queue_publisher.xml
+@@ -7,9 +7,9 @@
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/publisher.xsd">
+     <publisher topic="product_action_attribute.update">
+-        <connection name="db" exchange="magento-db" />
++        <connection name="amqp" exchange="magento-db" />
+     </publisher>
+     <publisher topic="product_action_attribute.website.update">
+-        <connection name="db" exchange="magento-db" />
++        <connection name="amqp" exchange="magento-db" />
+     </publisher>
+ </config>
+\ No newline at end of file
+diff --git a/etc/queue_topology.xml b/etc/queue_topology.xml
+index bdac891..c44cf2b 100644
+--- a/etc/queue_topology.xml
++++ b/etc/queue_topology.xml
+@@ -6,7 +6,7 @@
+  */
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/topology.xsd">
+-    <exchange name="magento-db" type="topic" connection="db">
++    <exchange name="magento-db" type="topic" connection="amqp">
+         <binding id="updateBinding" topic="product_action_attribute.update" destinationType="queue" destination="product_action_attribute.update"/>
+         <binding id="updateBindingWebsite" topic="product_action_attribute.website.update" destinationType="queue" destination="product_action_attribute.website.update"/>
+     </exchange>
+-- 
+2.32.0
