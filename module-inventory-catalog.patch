@@ -1,0 +1,50 @@
+---
+ etc/queue_consumer.xml  | 4 ++--
+ etc/queue_publisher.xml | 4 ++--
+ etc/queue_topology.xml  | 2 +-
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/etc/queue_consumer.xml b/etc/queue_consumer.xml
+index 76a2b77..7d3880d 100644
+--- a/etc/queue_consumer.xml
++++ b/etc/queue_consumer.xml
+@@ -6,6 +6,6 @@
+  */
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/consumer.xsd">
+-    <consumer name="inventory.source.items.cleanup" queue="inventory.source.items.cleanup" connection="db" handler="Magento\InventoryCatalog\Model\DeleteSourceItemsBySkus::execute"/>
+-    <consumer name="inventory.mass.update" queue="inventory.mass.update" connection="db" handler="Magento\InventoryCatalog\Model\UpdateInventory::execute"/>
++    <consumer name="inventory.source.items.cleanup" queue="inventory.source.items.cleanup" connection="amqp" handler="Magento\InventoryCatalog\Model\DeleteSourceItemsBySkus::execute"/>
++    <consumer name="inventory.mass.update" queue="inventory.mass.update" connection="amqp" handler="Magento\InventoryCatalog\Model\UpdateInventory::execute"/>
+ </config>
+diff --git a/etc/queue_publisher.xml b/etc/queue_publisher.xml
+index fab4d65..f5deaac 100644
+--- a/etc/queue_publisher.xml
++++ b/etc/queue_publisher.xml
+@@ -16,9 +16,9 @@
+         <connection name="amqp" exchange="magento" disabled="false" />
+     </publisher>
+     <publisher topic="inventory.source.items.cleanup">
+-        <connection name="db" exchange="magento-db" disabled="false" />
++        <connection name="amqp" exchange="magento-db" disabled="false" />
+     </publisher>
+     <publisher topic="inventory.mass.update">
+-        <connection name="db" exchange="magento-db" disabled="false" />
++        <connection name="amqp" exchange="magento-db" disabled="false" />
+     </publisher>
+ </config>
+diff --git a/etc/queue_topology.xml b/etc/queue_topology.xml
+index e9d77e5..9bcb521 100644
+--- a/etc/queue_topology.xml
++++ b/etc/queue_topology.xml
+@@ -6,7 +6,7 @@
+  */
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/topology.xsd">
+-    <exchange name="magento-db" type="topic" connection="db">
++    <exchange name="magento-db" type="topic" connection="amqp">
+         <binding id="InventorySourceItemsCleanUpBinding" topic="inventory.source.items.cleanup" destinationType="queue" destination="inventory.source.items.cleanup"/>
+         <binding id="InventoryMassUpdateBinding" topic="inventory.mass.update" destinationType="queue" destination="inventory.mass.update"/>
+     </exchange>
+-- 
+2.32.0

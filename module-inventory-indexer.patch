@@ -1,0 +1,56 @@
+---
+ etc/queue_consumer.xml  | 6 +++---
+ etc/queue_publisher.xml | 6 +++---
+ etc/queue_topology.xml  | 2 +-
+ 3 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/etc/queue_consumer.xml b/etc/queue_consumer.xml
+index 41746a1..0552cbc 100644
+--- a/etc/queue_consumer.xml
++++ b/etc/queue_consumer.xml
+@@ -6,7 +6,7 @@
+  */
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/consumer.xsd">
+-    <consumer name="inventory.reservations.updateSalabilityStatus" queue="inventory.reservations.updateSalabilityStatus" connection="db" consumerInstance="Magento\Framework\MessageQueue\Consumer" />
+-    <consumer name="inventory.indexer.sourceItem" queue="inventory.indexer.sourceItem" connection="db" handler="Magento\InventoryIndexer\Indexer\SourceItem\Strategy\Sync::executeList"/>
+-    <consumer name="inventory.indexer.stock" queue="inventory.indexer.stock" connection="db" handler="Magento\InventoryIndexer\Indexer\Stock\Strategy\Sync::executeList"/>
++    <consumer name="inventory.reservations.updateSalabilityStatus" queue="inventory.reservations.updateSalabilityStatus" connection="amqp" consumerInstance="Magento\Framework\MessageQueue\Consumer" />
++    <consumer name="inventory.indexer.sourceItem" queue="inventory.indexer.sourceItem" connection="amqp" handler="Magento\InventoryIndexer\Indexer\SourceItem\Strategy\Sync::executeList"/>
++    <consumer name="inventory.indexer.stock" queue="inventory.indexer.stock" connection="amqp" handler="Magento\InventoryIndexer\Indexer\Stock\Strategy\Sync::executeList"/>
+ </config>
+diff --git a/etc/queue_publisher.xml b/etc/queue_publisher.xml
+index 6c655d0..78260ca 100644
+--- a/etc/queue_publisher.xml
++++ b/etc/queue_publisher.xml
+@@ -7,12 +7,12 @@
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/publisher.xsd">
+     <publisher topic="inventory.indexer.sourceItem">
+-        <connection name="db" exchange="magento-db" disabled="false" />
++        <connection name="amqp" exchange="magento-db" disabled="false" />
+     </publisher>
+     <publisher topic="inventory.indexer.stock">
+-        <connection name="db" exchange="magento-db" disabled="false" />
++        <connection name="amqp" exchange="magento-db" disabled="false" />
+     </publisher>
+     <publisher topic="inventory.reservations.updateSalabilityStatus">
+-        <connection name="db" exchange="magento-db" disabled="false" />
++        <connection name="amqp" exchange="magento-db" disabled="false" />
+     </publisher>
+ </config>
+diff --git a/etc/queue_topology.xml b/etc/queue_topology.xml
+index 3437ff5..bc9e130 100644
+--- a/etc/queue_topology.xml
++++ b/etc/queue_topology.xml
+@@ -6,7 +6,7 @@
+  */
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/topology.xsd">
+-    <exchange name="magento-db" type="topic" connection="db" >
++    <exchange name="magento-db" type="topic" connection="amqp" >
+         <binding id="InventorySourceItemIndexer" topic="inventory.indexer.sourceItem" destinationType="queue" destination="inventory.indexer.sourceItem"/>
+         <binding id="InventoryStockIndexer" topic="inventory.indexer.stock" destinationType="queue" destination="inventory.indexer.stock"/>
+         <binding id="InventoryReservationUpdateSalabilityStatus" topic="inventory.reservations.updateSalabilityStatus" destinationType="queue" destination="inventory.reservations.updateSalabilityStatus"/>
+-- 
+2.32.0

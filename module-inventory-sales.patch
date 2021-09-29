@@ -1,0 +1,50 @@
+---
+ etc/queue_consumer.xml  | 4 ++--
+ etc/queue_publisher.xml | 4 ++--
+ etc/queue_topology.xml  | 2 +-
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/etc/queue_consumer.xml b/etc/queue_consumer.xml
+index 46f6027..17e6aec 100644
+--- a/etc/queue_consumer.xml
++++ b/etc/queue_consumer.xml
+@@ -6,6 +6,6 @@
+  */
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/consumer.xsd">
+-    <consumer name="inventory.reservations.update" queue="inventory.reservations.update" connection="db" handler="Magento\InventorySales\Model\ResourceModel\UpdateReservationsBySkus::execute"/>
+-    <consumer name="inventory.reservations.cleanup" queue="inventory.reservations.cleanup" connection="db" handler="Magento\InventorySales\Model\ResourceModel\DeleteReservationsBySkus::execute"/>
++    <consumer name="inventory.reservations.update" queue="inventory.reservations.update" connection="amqp" handler="Magento\InventorySales\Model\ResourceModel\UpdateReservationsBySkus::execute"/>
++    <consumer name="inventory.reservations.cleanup" queue="inventory.reservations.cleanup" connection="amqp" handler="Magento\InventorySales\Model\ResourceModel\DeleteReservationsBySkus::execute"/>
+ </config>
+diff --git a/etc/queue_publisher.xml b/etc/queue_publisher.xml
+index eecc6c1..47b0a0d 100644
+--- a/etc/queue_publisher.xml
++++ b/etc/queue_publisher.xml
+@@ -7,9 +7,9 @@
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/publisher.xsd">
+     <publisher topic="inventory.reservations.update">
+-        <connection name="db" exchange="magento-db" disabled="false" />
++        <connection name="amqp" exchange="magento-db" disabled="false" />
+     </publisher>
+     <publisher topic="inventory.reservations.cleanup">
+-        <connection name="db" exchange="magento-db" disabled="false" />
++        <connection name="amqp" exchange="magento-db" disabled="false" />
+     </publisher>
+ </config>
+diff --git a/etc/queue_topology.xml b/etc/queue_topology.xml
+index 3a5a6cf..4044aac 100644
+--- a/etc/queue_topology.xml
++++ b/etc/queue_topology.xml
+@@ -6,7 +6,7 @@
+  */
+ -->
+ <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/topology.xsd">
+-    <exchange name="magento-db" type="topic" connection="db">
++    <exchange name="magento-db" type="topic" connection="amqp">
+         <binding id="InventoryReservationsUpdateBindingDb" topic="inventory.reservations.update" destinationType="queue" destination="inventory.reservations.update"/>
+         <binding id="InventoryReservationsDeleteBindingDb" topic="inventory.reservations.cleanup" destinationType="queue" destination="inventory.reservations.cleanup"/>
+     </exchange>
+-- 
+2.32.0
