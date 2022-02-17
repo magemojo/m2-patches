@@ -1,0 +1,150 @@
+diff --git a/Filter/DirectiveProcessor/DependDirective.php b/Filter/DirectiveProcessor/DependDirective.php
+index f557f7465b5f..83345acd6e5b 100644
+--- a/Filter/DirectiveProcessor/DependDirective.php
++++ b/Filter/DirectiveProcessor/DependDirective.php
+@@ -32,9 +32,13 @@ public function __construct(
+     }
+
+     /**
+-     * @inheritdoc
++     * @param array $construction
++     * @param Template $filter
++     * @param array $templateVariables
++     *
++     * @return string
+      */
+-    public function process(array $construction, Template $filter, array $templateVariables): string
++    private function resolve(array $construction, Template $filter, array $templateVariables): string
+     {
+         if (empty($templateVariables)) {
+             // If template processing
+@@ -48,6 +52,16 @@ public function process(array $construction, Template $filter, array $templateVa
+         }
+     }
+
++    /**
++     * @inheritdoc
++     */
++    public function process(array $construction, Template $filter, array $templateVariables): string
++    {
++        $result = $this->resolve($construction, $filter, $templateVariables);
++
++        return str_replace(['{', '}'], '', (string) $result);
++    }
++
+     /**
+      * @inheritdoc
+      */
+diff --git a/Filter/DirectiveProcessor/ForDirective.php b/Filter/DirectiveProcessor/ForDirective.php
+index 2b51185b1b5f..41cd58118fd6 100644
+--- a/Filter/DirectiveProcessor/ForDirective.php
++++ b/Filter/DirectiveProcessor/ForDirective.php
+@@ -36,14 +36,13 @@ public function __construct(
+     }
+
+     /**
+-     * Filter the string as template.
+-     *
+      * @param array $construction
+      * @param Template $filter
+      * @param array $templateVariables
++     *
+      * @return string
+      */
+-    public function process(array $construction, Template $filter, array $templateVariables): string
++    private function resolve(array $construction, Template $filter, array $templateVariables): string
+     {
+         if (!$this->isValidLoop($construction)) {
+             return $construction[0];
+@@ -67,6 +66,16 @@ public function process(array $construction, Template $filter, array $templateVa
+         return $construction[0];
+     }
+
++    /**
++     * @inheritdoc
++     */
++    public function process(array $construction, Template $filter, array $templateVariables): string
++    {
++        $result = $this->resolve($construction, $filter, $templateVariables);
++
++        return str_replace(['{', '}'], '', (string) $result);
++    }
++
+     /**
+      * Check if the matched construction is valid.
+      *
+diff --git a/Filter/DirectiveProcessor/IfDirective.php b/Filter/DirectiveProcessor/IfDirective.php
+index 7fedc7946f21..469dae71d068 100644
+--- a/Filter/DirectiveProcessor/IfDirective.php
++++ b/Filter/DirectiveProcessor/IfDirective.php
+@@ -32,9 +32,13 @@ public function __construct(
+     }
+
+     /**
+-     * @inheritdoc
++     * @param array $construction
++     * @param Template $filter
++     * @param array $templateVariables
++     *
++     * @return string
+      */
+-    public function process(array $construction, Template $filter, array $templateVariables): string
++    private function resolve(array $construction, Template $filter, array $templateVariables): string
+     {
+         if (empty($templateVariables)) {
+             return $construction[0];
+@@ -50,6 +54,16 @@ public function process(array $construction, Template $filter, array $templateVa
+         }
+     }
+
++    /**
++     * @inheritdoc
++     */
++    public function process(array $construction, Template $filter, array $templateVariables): string
++    {
++        $result = $this->resolve($construction, $filter, $templateVariables);
++
++        return str_replace(['{', '}'], '', (string) $result);
++    }
++
+     /**
+      * @inheritdoc
+      */
+diff --git a/Filter/DirectiveProcessor/SimpleDirective.php b/Filter/DirectiveProcessor/SimpleDirective.php
+index 9f4b30d0c96c..b9280aec2833 100644
+--- a/Filter/DirectiveProcessor/SimpleDirective.php
++++ b/Filter/DirectiveProcessor/SimpleDirective.php
+@@ -68,7 +68,7 @@ public function process(array $construction, Template $filter, array $templateVa
+                 ->get($construction['directiveName']);
+         } catch (\InvalidArgumentException $e) {
+             // This directive doesn't have a SimpleProcessor
+-            return $construction[0];
++            return '';
+         }
+
+         $parameters = $this->extractParameters($construction, $filter, $templateVariables);
+@@ -79,6 +79,8 @@ public function process(array $construction, Template $filter, array $templateVa
+             !empty($construction['content']) ? $filter->filter($construction['content']) : null
+         );
+
++        $value = str_replace(['{', '}'], '', (string) $value);
++
+         $value = $this->filterApplier->applyFromRawParam(
+             $construction['filters'] ?? '',
+             $value,
+diff --git a/Filter/DirectiveProcessor/VarDirective.php b/Filter/DirectiveProcessor/VarDirective.php
+index 78034d70ba51..a7d6790acc79 100644
+--- a/Filter/DirectiveProcessor/VarDirective.php
++++ b/Filter/DirectiveProcessor/VarDirective.php
+@@ -55,10 +55,7 @@ public function process(array $construction, Template $filter, array $templateVa
+             $result = $this->filterApplier->applyFromRawParam($construction['filters'], $result);
+         }
+
+-        $pattern = '/{{.*?}}/';
+-        do {
+-            $result = preg_replace($pattern, '', (string)$result);
+-        } while (preg_match($pattern, $result));
++        $result = str_replace(['{', '}'], '', (string) $result);
+
+         return $result;
+     }
