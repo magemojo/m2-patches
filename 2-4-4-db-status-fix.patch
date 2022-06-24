@@ -1,11 +1,11 @@
 ---
- Table.php | 1 -
+ Setup/Declaration/Schema/Dto/Table.php | 1 -
  1 file changed, 1 deletion(-)
 
-diff --git a/Table.php b/Table.php
+diff --git a/Setup/Declaration/Schema/Dto/Table.php b/Setup/Declaration/Schema/Dto/Table.php
 index b864a3d..7348620 100644
---- a/Table.php
-+++ b/Table.php
+--- a/Setup/Declaration/Schema/Dto/Table.php
++++ b/Setup/Declaration/Schema/Dto/Table.php
 @@ -343,7 +343,6 @@ class Table extends GenericElement implements
              'resource' => $this->getResource(),
              'engine' => $this->getEngine(),
