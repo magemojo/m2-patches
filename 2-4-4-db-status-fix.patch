@@ -1,0 +1,18 @@
+---
+ Table.php | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/Table.php b/Table.php
+index b864a3d..7348620 100644
+--- a/Table.php
++++ b/Table.php
+@@ -343,7 +343,6 @@ class Table extends GenericElement implements
+             'resource' => $this->getResource(),
+             'engine' => $this->getEngine(),
+             'comment' => $this->getComment(),
+-            'charset' => $this->getCharset(),
+             'collation' => $this->getCollation()
+         ];
+     }
+-- 
+2.36.1
