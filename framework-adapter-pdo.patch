@@ -5,8 +5,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/vendor/magento/framework/DB/Adapter/Pdo/Mysql.php b/vendor/magento/framework/DB/Adapter/Pdo/Mysql.php
 --- a/vendor/magento/framework/DB/Adapter/Pdo/Mysql.php
-+++ b/vendor/magento/framework/DB/Adapter/Pdo/Mysql.php	(date 1661356163106)
-@@ -2229,10 +2229,12 @@
++++ b/vendor/magento/framework/DB/Adapter/Pdo/Mysql.php	(date 1661519230948)
+@@ -2229,10 +2229,14 @@
       */
      public function createTemporaryTableLike($temporaryTableName, $originTableName, $ifNotExists = false)
      {
@@ -15,8 +15,10 @@ diff --git a/vendor/magento/framework/DB/Adapter/Pdo/Mysql.php b/vendor/magento/
          $temporaryTable = $this->quoteIdentifier($this->_getTableName($temporaryTableName));
          $originTable = $this->quoteIdentifier($this->_getTableName($originTableName));
 -        $sql = sprintf('CREATE TEMPORARY TABLE %s %s LIKE %s', $ifNotExistsSql, $temporaryTable, $originTable);
-+        $originCreate = $this->fetchPairs(sprintf('SHOW CREATE TABLE %s', $originTable));
-+        $sql = str_replace('CREATE TABLE', 'CREATE TEMPORARY TABLE' . $ifNotExistsSql, reset($originCreate));
++        $originCreate = $this->fetchPairs("SHOW CREATE TABLE {$originTable}");
++        $sql = reset($originCreate);
++        $sql = preg_replace('/\/\*!50100 TABLESPACE [^\s]+ \*\//', '', $sql);
++        $sql = str_replace('CREATE TABLE', 'CREATE TEMPORARY TABLE' . $ifNotExistsSql, $sql);
 +        $sql = str_replace($originTable, $temporaryTable, $sql);
 
          return $this->query($sql);
